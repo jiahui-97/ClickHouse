@@ -221,11 +221,17 @@ if __name__ == "__main__":
                 )
             )
         )
+    logging.info("Parameters file %s is written", json_path)
 
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
     runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
     run_command = f"sudo -E {runner_path} | tee {output_path_log}"
+    logging.info("Going to run command: `%s`", run_command)
+    logging.info(
+        "ENV parameters for runner:\n%s",
+        "\n".join([f"{k}={v}" for k, v in my_env.items()]),
+    )
 
     with TeePopen(run_command, output_path_log, my_env) as process:
         retcode = process.wait()
