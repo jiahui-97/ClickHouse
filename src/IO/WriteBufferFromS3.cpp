@@ -2,7 +2,7 @@
 
 #if USE_AWS_S3
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
@@ -20,7 +20,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3WriteBytes;
+    extern const Event WriteBufferFromS3Bytes;
     extern const Event RemoteFSCacheDownloadBytes;
 }
 
@@ -95,6 +95,7 @@ void WriteBufferFromS3::nextImpl()
     if (cacheEnabled())
     {
         auto cache_key = cache->hash(key);
+
         file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
         current_download_offset += size;
 
@@ -120,7 +121,7 @@ void WriteBufferFromS3::nextImpl()
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
 
     last_part_size += offset();
 
@@ -133,6 +134,7 @@ void WriteBufferFromS3::nextImpl()
         writePart();
 
         allocateBuffer();
+        file_segments_holder.reset();
     }
 
     waitForReadyBackGroundTasks();

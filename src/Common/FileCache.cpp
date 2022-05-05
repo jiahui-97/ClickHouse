@@ -78,12 +78,15 @@ LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSetti
 
 void LRUFileCache::initialize()
 {
-    if (fs::exists(cache_base_path))
-        loadCacheInfoIntoMemory();
-    else
-        fs::create_directories(cache_base_path);
-
-    is_initialized = true;
+    std::lock_guard cache_lock(mutex);
+    if (!is_initialized)
+    {
+        if (fs::exists(cache_base_path))
+            loadCacheInfoIntoMemory(cache_lock);
+        else
+            fs::create_directories(cache_base_path);
+        is_initialized = true;
+    }
 }
 
 void LRUFileCache::useCell(
@@ -281,7 +284,10 @@ void LRUFileCache::fillHolesWithEmptyFileSegments(
         if (fill_with_detached_file_segments)
         {
             auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
-            file_segment->detached = true;
+            {
+                std::lock_guard segment_lock(file_segment->mutex);
+                file_segment->markAsDetached(segment_lock);
+            }
             file_segments.insert(it, file_segment);
         }
         else
@@ -305,7 +311,10 @@ void LRUFileCache::fillHolesWithEmptyFileSegments(
         if (fill_with_detached_file_segments)
         {
             auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
-            file_segment->detached = true;
+            {
+                std::lock_guard segment_lock(file_segment->mutex);
+                file_segment->markAsDetached(segment_lock);
+            }
             file_segments.insert(file_segments.end(), file_segment);
         }
         else
@@ -361,7 +370,10 @@ FileSegmentsHolder LRUFileCache::get(const Key & key, size_t offset, size_t size
     if (file_segments.empty())
     {
         auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::EMPTY);
-        file_segment->detached = true;
+        {
+            std::lock_guard segment_lock(file_segment->mutex);
+            file_segment->markAsDetached(segment_lock);
+        }
         file_segments = { file_segment };
     }
     else
@@ -567,13 +579,16 @@ void LRUFileCache::remove(bool force_remove_unreleasable)
         auto & [key, offset] = *it++;
 
         auto * cell = getCell(key, offset, cache_lock);
+        if (!cell)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache is in inconsistent state: LRU queue contains entries with no cache cell");
+
         if (cell->releasable() || force_remove_unreleasable)
         {
             auto file_segment = cell->file_segment;
             if (file_segment)
             {
                 std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
-                file_segment->detached = true;
+                file_segment->detach(cache_lock, segment_lock);
                 remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
             }
         }
@@ -622,10 +637,8 @@ void LRUFileCache::remove(
     }
 }
 
-void LRUFileCache::loadCacheInfoIntoMemory()
+void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock)
 {
-    std::lock_guard cache_lock(mutex);
-
     Key key;
     UInt64 offset = 0;
     size_t size = 0;
