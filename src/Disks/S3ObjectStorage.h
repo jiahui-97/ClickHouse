@@ -100,6 +100,8 @@ public:
 
     void startup() override;
 
+    void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) override;
+
 private:
 
     void copyObjectImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,

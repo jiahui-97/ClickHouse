@@ -105,6 +105,8 @@ public:
 
     void removeFromCache(const std::string & path);
 
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) = 0;
+
 protected:
     FileCachePtr cache;
 };

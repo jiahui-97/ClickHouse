@@ -148,6 +148,8 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
+
 private:
     const String name;
     const String remote_fs_root_path;
