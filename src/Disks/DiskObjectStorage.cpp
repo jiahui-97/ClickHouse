@@ -619,6 +619,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return object_storage->writeObject(path, {}, create_metadata_callback, buf_size, settings);
 }
 
+
+void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
+{
+    object_storage->applyNewSettings(config, "storage_configuration.disks." + name, context_);
+}
+
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {
     if (i != 0)
@@ -633,7 +639,6 @@ void DiskObjectStorageReservation::update(UInt64 new_size)
     size = new_size;
     disk->reserved_bytes += size;
 }
-
 
 DiskObjectStorageReservation::~DiskObjectStorageReservation()
 {

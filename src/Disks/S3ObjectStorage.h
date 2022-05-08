@@ -100,7 +100,7 @@ public:
 
     void startup() override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 
 private:
 

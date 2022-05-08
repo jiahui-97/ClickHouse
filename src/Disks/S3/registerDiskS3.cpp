@@ -10,7 +10,7 @@
 
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/S3Common.h>
-#include <Disks/S3/DiskS3.h>
+#include <Disks/DiskObjectStorage.h>
 #include <Disks/DiskCacheWrapper.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/S3/ProxyConfiguration.h>
@@ -77,12 +77,13 @@ void registerDiskS3(DiskFactory & factory)
             getSettings(config, config_prefix, context),
             uri.version_id, uri.bucket);
 
-        std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
+        std::shared_ptr<IDisk> s3disk = std::make_shared<DiskObjectStorage>(
             name,
             uri.key,
             "DiskS3",
             metadata_disk,
-            std::move(s3_storage));
+            std::move(s3_storage),
+            DiskType::S3);
 
         /// This code is used only to check access to the corresponding disk.
         if (!config.getBool(config_prefix + ".skip_access_check", false))

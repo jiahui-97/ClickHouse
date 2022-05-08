@@ -22,13 +22,17 @@ public:
         const String & remote_fs_root_path_,
         const String & log_name,
         DiskPtr metadata_disk_,
-        ObjectStoragePtr && object_storage_)
+        ObjectStoragePtr && object_storage_,
+        DiskType disk_type_)
         : name(name_)
         , remote_fs_root_path(remote_fs_root_path_)
         , log (&Poco::Logger::get(log_name))
         , metadata_disk(metadata_disk_)
+        , disk_type(disk_type_)
         , object_storage(std::move(object_storage_))
     {}
+
+    DiskType getType() const override { return disk_type; }
 
     bool supportZeroCopyReplication() const override { return true; }
 
@@ -68,7 +72,6 @@ public:
     UInt64 getKeepingFreeSpace() const override { return 0; }
 
     bool exists(const String & path) const override;
-
 
     bool isFile(const String & path) const override;
 
@@ -155,6 +158,8 @@ private:
     const String remote_fs_root_path;
     Poco::Logger * log;
     DiskPtr metadata_disk;
+
+    const DiskType disk_type;
     ObjectStoragePtr object_storage;
 
     UInt64 reserved_bytes = 0;

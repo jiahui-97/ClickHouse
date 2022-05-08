@@ -9,6 +9,8 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Disks/S3/diskSettings.h>
+
 
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
@@ -406,5 +408,10 @@ void S3ObjectStorage::startup()
     const_cast<Aws::S3::S3Client &>(*client_ptr.get()).EnableRequestProcessing();
 }
 
+void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+{
+    s3_settings.set(getSettings(config, config_prefix, context));
+    client.set(getClient(config, config_prefix, context));
+}
 
 }
