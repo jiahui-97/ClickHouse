@@ -5,7 +5,7 @@
 namespace DB
 {
 
-std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     S3Settings::ReadWriteSettings rw_settings;
     rw_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries);
@@ -14,7 +14,7 @@ std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfigurat
     rw_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold);
     rw_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size);
 
-    return std::make_unique<DiskS3Settings>(
+    return std::make_unique<S3ObjectStorageSettings>(
         rw_settings,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),

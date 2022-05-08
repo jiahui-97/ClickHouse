@@ -82,6 +82,7 @@ bool S3ObjectStorage::exists(const std::string & path) const
     return true;
 }
 
+
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     const std::string & common_path_prefix,
     const BlobsPathToSize & blobs_to_read,
@@ -102,7 +103,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
    auto settings_ptr = s3_settings.get();
    auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
        client.get(), bucket, version_id, common_path_prefix, blobs_to_read,
-       settings_ptr->s3_max_single_read_retries, disk_read_settings);
+       settings_ptr->s3_settings.max_single_read_retries, disk_read_settings);
 
    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
    {
@@ -128,16 +129,13 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject(
         && write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
 
+    //TODO alesapin
     auto settings_ptr = s3_settings.get();
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
         bucket,
         path,
-        S3Settings::ReadWriteSettings{},
-        //settings_ptr->s3_min_upload_part_size,
-        //settings_ptr->s3_upload_part_size_multiply_factor,
-        //settings_ptr->s3_upload_part_size_multiply_parts_count_threshold,
-        //settings_ptr->s3_max_single_part_upload_size,
+        settings_ptr->s3_settings,
         attributes,
         buf_size, threadPoolCallbackRunner(getThreadPoolWriter()),
         cache_on_write ? cache : nullptr);
@@ -323,7 +321,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
 
     std::vector<String> part_tags;
 
-    size_t upload_part_size = settings_ptr->s3_min_upload_part_size;
+    size_t upload_part_size = settings_ptr->s3_settings.min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
         Aws::S3::Model::UploadPartCopyRequest part_request;

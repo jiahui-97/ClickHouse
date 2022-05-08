@@ -25,4 +25,13 @@ std::string IObjectStorage::getCacheBasePath() const
     return cache ? cache->getBasePath() : "";
 }
 
+void IObjectStorage::removeFromCache(const std::string & path)
+{
+    if (cache)
+    {
+        auto key = cache->hash(path);
+        cache->remove(key);
+    }
+}
+
 }

@@ -9,6 +9,7 @@
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/HeadObjectResult.h>
 #include <aws/s3/model/ListObjectsV2Result.h>
+#include <Storages/StorageS3Settings.h>
 
 
 namespace DB
@@ -20,30 +21,25 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
-        uint64_t s3_max_single_read_retries_,
-        uint64_t s3_min_upload_part_size_,
-        uint64_t s3_upload_part_size_multiply_factor_,
-        uint64_t s3_upload_part_size_multiply_parts_count_threshold_,
-        uint64_t s3_max_single_part_upload_size_,
+        const S3Settings::ReadWriteSettings & s3_settings_,
         uint64_t min_bytes_for_seek_,
+        bool send_metadata_,
+        uint64_t thread_pool_size_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_)
-        : s3_max_single_read_retries(s3_max_single_read_retries_)
-        , s3_min_upload_part_size(s3_min_upload_part_size_)
-        , s3_upload_part_size_multiply_factor(s3_upload_part_size_multiply_factor_)
-        , s3_upload_part_size_multiply_parts_count_threshold(s3_upload_part_size_multiply_parts_count_threshold_)
-        , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)
+        : s3_settings(s3_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
+        , send_metadata(send_metadata_)
+        , thread_pool_size(thread_pool_size_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
     {}
 
-    uint64_t s3_max_single_read_retries;
-    uint64_t s3_min_upload_part_size;
-    uint64_t s3_upload_part_size_multiply_factor;
-    uint64_t s3_upload_part_size_multiply_parts_count_threshold;
-    uint64_t s3_max_single_part_upload_size;
+    S3Settings::ReadWriteSettings s3_settings;
+
     uint64_t min_bytes_for_seek;
+    bool send_metadata;
+    uint64_t thread_pool_size;
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
 };
@@ -53,21 +49,19 @@ class S3ObjectStorage : public IObjectStorage
 {
 public:
     S3ObjectStorage(
-        std::unique_ptr<Aws::S3::S3Client> client_,
-        std::unique_ptr<S3ObjectStorageSettings> s3_settings_,
-        String version_id_)
-        : client(std::move(client_))
+        FileCachePtr && cache_,
+        std::unique_ptr<Aws::S3::S3Client> && client_,
+        std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
+        String version_id_,
+        String bucket_)
+        : IObjectStorage(std::move(cache_))
+        , bucket(bucket_)
+        , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , version_id(std::move(version_id_))
     {}
         
     bool exists(const std::string & path) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
-        const BlobPathWithSize & blobs_to_read,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const std::string & common_path_prefix,

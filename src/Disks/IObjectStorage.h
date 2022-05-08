@@ -54,17 +54,15 @@ using FinalizeCallback = std::function<void(size_t bytes_count)>;
 class IObjectStorage
 {
 public:
+    explicit IObjectStorage(FileCachePtr && cache_)
+        : cache(std::move(cache_))
+    {}
+
     virtual bool exists(const std::string & path) const = 0;
 
     virtual void listPrefix(const std::string & path, BlobsPathToSize & children) const = 0;
 
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
-
-    virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
-        const BlobPathWithSize & blobs_to_read,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const std::string & common_path_prefix,
@@ -105,6 +103,7 @@ public:
 
     virtual void startup() = 0;
 
+    void removeFromCache(const std::string & path);
 
 protected:
     FileCachePtr cache;

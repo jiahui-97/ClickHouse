@@ -3,15 +3,25 @@
 #include <Disks/IDisk.h>
 #include <Disks/IObjectStorage.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric DiskSpaceReservedForMerge;
+}
+
 namespace DB
 {
 
 class DiskObjectStorage : public IDisk
 {
+
+friend class DiskObjectStorageReservation;
+
 public:
     DiskObjectStorage(
-        const String & name_, const String & remote_fs_root_path_,
-        const String & log_name, DiskPtr metadata_disk_,
+        const String & name_,
+        const String & remote_fs_root_path_,
+        const String & log_name,
+        DiskPtr metadata_disk_,
         ObjectStoragePtr && object_storage_)
         : name(name_)
         , remote_fs_root_path(remote_fs_root_path_)
@@ -19,6 +29,10 @@ public:
         , metadata_disk(metadata_disk_)
         , object_storage(std::move(object_storage_))
     {}
+
+    bool supportZeroCopyReplication() const override { return true; }
+
+    bool supportParallelWrite() const override { return true; }
 
     struct Metadata;
     using MetadataUpdater = std::function<bool(Metadata & metadata)>;
@@ -116,13 +130,23 @@ public:
 
     bool isRemote() const override { return true; }
 
-    bool supportZeroCopyReplication() const override { return true; }
-
-    bool supportParallelWrite() const override { return true; }
-
     void shutdown() override;
 
     void startup() override;
+
+    ReservationPtr reserve(UInt64 bytes) override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
 private:
     const String name;
@@ -131,11 +155,16 @@ private:
     DiskPtr metadata_disk;
     ObjectStoragePtr object_storage;
 
+    UInt64 reserved_bytes = 0;
+    UInt64 reservation_count = 0;
+    std::mutex reservation_mutex;
+
     mutable std::shared_mutex metadata_mutex;
     void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
 
     void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
+    bool tryReserve(UInt64 bytes);
 };
 
 struct DiskObjectStorage::Metadata
@@ -192,9 +221,30 @@ private:
     void save(bool sync = false);
     void saveToBuffer(WriteBuffer & buffer, bool sync);
     void load();
-
-
 };
 
+class DiskObjectStorageReservation final : public IReservation
+{
+public:
+    DiskObjectStorageReservation(const std::shared_ptr<DiskObjectStorage> & disk_, UInt64 size_)
+        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    {
+    }
+
+    UInt64 getSize() const override { return size; }
+
+    DiskPtr getDisk(size_t i) const override;
+
+    Disks getDisks() const override { return {disk}; }
+
+    void update(UInt64 new_size) override;
+
+    ~DiskObjectStorageReservation() override;
+
+private:
+    std::shared_ptr<DiskObjectStorage> disk;
+    UInt64 size;
+    CurrentMetrics::Increment metric_increment;
+};
 
 }

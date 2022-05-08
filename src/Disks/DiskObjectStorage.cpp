@@ -6,8 +6,9 @@
 #include <IO/WriteHelpers.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
+#include <Common/getRandomASCIIString.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -152,7 +153,7 @@ void DiskObjectStorage::Metadata::load()
         if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
             throw;
 
-        throw Exception("Failed to read metadata file: " + metadata_file_path, e, ErrorCodes::UNKNOWN_FORMAT);
+        throw Exception("Failed to read metadata file: " + metadata_file_path, ErrorCodes::UNKNOWN_FORMAT);
     }
 }
 
@@ -480,8 +481,6 @@ Poco::Timestamp DiskObjectStorage::getLastModified(const String & path)
     return metadata_disk->getLastModified(path);
 }
 
-
-
 void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> & paths_to_remove)
 {
     LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
@@ -502,12 +501,7 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
                 {
 
                     paths_to_remove.push_back(remote_fs_root_path + remote_fs_object_path);
-
-                    if (cache)
-                    {
-                        auto key = cache->hash(remote_fs_object_path);
-                        cache->remove(key);
-                    }
+                    object_storage->removeFromCache(remote_fs_object_path);
                 }
 
                 return false;
@@ -565,6 +559,107 @@ void DiskObjectStorage::shutdown()
 void DiskObjectStorage::startup()
 {
     object_storage->startup();
+}
+
+ReservationPtr DiskObjectStorage::reserve(UInt64 bytes)
+{
+    if (!tryReserve(bytes))
+        return {};
+
+    return std::make_unique<DiskObjectStorageReservation>(std::static_pointer_cast<DiskObjectStorage>(shared_from_this()), bytes);
+}
+
+
+bool DiskObjectStorage::tryReserve(UInt64 bytes)
+{
+    std::lock_guard lock(reservation_mutex);
+    if (bytes == 0)
+    {
+        LOG_TRACE(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
+        ++reservation_count;
+        return true;
+    }
+
+    auto available_space = getAvailableSpace();
+    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
+    if (unreserved_space >= bytes)
+    {
+        LOG_TRACE(log, "Reserving {} on disk {}, having unreserved {}.",
+            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
+        ++reservation_count;
+        reserved_bytes += bytes;
+        return true;
+    }
+    return false;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
+{
+    auto metadata = readMetadata(path);
+    return object_storage->readObjects(remote_fs_root_path, metadata.remote_fs_objects, settings, read_hint, file_size);
+}
+
+std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
+    const String & path,
+    size_t buf_size,
+    WriteMode mode,
+    const WriteSettings & settings)
+{
+    auto blob_name = getRandomASCIIString();
+
+    auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
+    {
+        readOrCreateUpdateAndStoreMetadata(path, mode, false,
+            [blob_name, count] (DiskObjectStorage::Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
+    };
+
+    return object_storage->writeObject(path, {}, create_metadata_callback, buf_size, settings);
+}
+
+DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
+{
+    if (i != 0)
+        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+    return disk;
+}
+
+void DiskObjectStorageReservation::update(UInt64 new_size)
+{
+    std::lock_guard lock(disk->reservation_mutex);
+    disk->reserved_bytes -= size;
+    size = new_size;
+    disk->reserved_bytes += size;
+}
+
+
+DiskObjectStorageReservation::~DiskObjectStorageReservation()
+{
+    try
+    {
+        std::lock_guard lock(disk->reservation_mutex);
+        if (disk->reserved_bytes < size)
+        {
+            disk->reserved_bytes = 0;
+            LOG_ERROR(disk->log, "Unbalanced reservations size for disk '{}'.", disk->getName());
+        }
+        else
+        {
+            disk->reserved_bytes -= size;
+        }
+
+        if (disk->reservation_count == 0)
+            LOG_ERROR(disk->log, "Unbalanced reservation count for disk '{}'.", disk->getName());
+        else
+            --disk->reservation_count;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 

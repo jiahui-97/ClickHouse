@@ -72,16 +72,17 @@ void registerDiskS3(DiskFactory & factory)
 
         FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
+        ObjectStoragePtr s3_storage = std::make_unique<S3ObjectStorage>(
+            std::move(cache), getClient(config, config_prefix, context),
+            getSettings(config, config_prefix, context),
+            uri.version_id, uri.bucket);
+
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
-            uri.bucket,
             uri.key,
-            uri.version_id,
+            "DiskS3",
             metadata_disk,
-            std::move(cache),
-            context,
-            getClient(config, config_prefix, context),
-            getSettings(config, config_prefix, context));
+            std::move(s3_storage));
 
         /// This code is used only to check access to the corresponding disk.
         if (!config.getBool(config_prefix + ".skip_access_check", false))
