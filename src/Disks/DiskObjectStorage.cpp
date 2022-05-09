@@ -403,9 +403,14 @@ String DiskObjectStorage::getUniqueId(const String & path) const
     return id;
 }
 
+bool DiskObjectStorage::checkObjectExists(const String & path) const
+{
+    return object_storage->exists(path);
+}
+
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
-    return object_storage->exists(id);
+    return checkObjectExists(id);
 }
 
 void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path)

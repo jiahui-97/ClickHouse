@@ -371,13 +371,13 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
     }
 }
 
-void S3ObjectStorage::copyObject(const std::string & object_from, const std::string & object_to)
+void S3ObjectStorage::copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes)
 {
     auto head = requestObjectHeadData(bucket, object_from).GetResult();
     if (head.GetContentLength() >= static_cast<int64_t>(5UL * 1024 * 1024 * 1024))
-        copyObjectMultipartImpl(bucket, object_from, bucket, object_to, head);
+        copyObjectMultipartImpl(bucket, object_from, bucket, object_to, head, object_to_attributes);
     else
-        copyObjectImpl(bucket, object_from, bucket, object_to);
+        copyObjectImpl(bucket, object_from, bucket, object_to, head, object_to_attributes);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)

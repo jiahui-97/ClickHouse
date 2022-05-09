@@ -89,7 +89,7 @@ public:
 
     virtual void removeObjectsIfExist(const std::vector<std::string> & paths) = 0;
 
-    virtual void copyObject(const std::string & object_from, const std::string & object_to) = 0;
+    virtual void copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
 
     virtual ~IObjectStorage() = default;
 

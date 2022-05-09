@@ -90,7 +90,7 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    void copyObject(const std::string & object_from, const std::string & object_to) override;
+    void copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 

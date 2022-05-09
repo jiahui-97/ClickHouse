@@ -11,10 +11,13 @@ namespace CurrentMetrics
 namespace DB
 {
 
+class DiskObjectStorageMetadataHelper;
+
 class DiskObjectStorage : public IDisk
 {
 
 friend class DiskObjectStorageReservation;
+friend class DiskObjectStorageMetadataHelper;
 
 public:
     DiskObjectStorage(
@@ -104,6 +107,7 @@ public:
 
     String getUniqueId(const String & path) const override;
 
+    bool checkObjectExists(const String & path) const;
     /// TODO Check object exists
     bool checkUniqueId(const String & id) const override;
 
@@ -172,6 +176,8 @@ private:
     void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
     bool tryReserve(UInt64 bytes);
+
+    DiskObjectStorageMetadataHelper * metadata_helper;
 };
 
 struct DiskObjectStorage::Metadata
@@ -252,6 +258,74 @@ private:
     std::shared_ptr<DiskObjectStorage> disk;
     UInt64 size;
     CurrentMetrics::Increment metric_increment;
+};
+
+class DiskObjectStorageMetadataHelper
+{
+public:
+    static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();
+    static constexpr UInt64 UNKNOWN_REVISION = 0;
+
+    DiskObjectStorageMetadataHelper(DiskObjectStorage * disk_, ReadSettings read_settings_)
+        : disk(disk_)
+        , read_settings(std::move(read_settings_))
+    {
+    }
+
+    struct RestoreInformation
+    {
+        UInt64 revision = LATEST_REVISION;
+        String source_bucket;
+        String source_path;
+        bool detached = false;
+    };
+
+    using Futures = std::vector<std::future<void>>;
+
+    void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata);
+    /// Converts revision to binary string with leading zeroes (64 bit).
+    static String revisionToString(UInt64 revision);
+
+    bool checkObjectExists(const String & source_bucket, const String & prefix) const;
+    void findLastRevision();
+
+    int readSchemaVersion(const String & source_bucket, const String & source_path);
+    void saveSchemaVersion(const int & version);
+    void updateObjectMetadata(const String & key, const ObjectMetadata & metadata);
+    void migrateFileToRestorableSchema(const String & path);
+    void migrateToRestorableSchemaRecursive(const String & path, Futures & results);
+    void migrateToRestorableSchema();
+
+    void restore();
+    void readRestoreInformation(RestoreInformation & restore_information);
+    void restoreFiles(const RestoreInformation & restore_information);
+    void processRestoreFiles(const String & source_bucket, const String & source_path, std::vector<String> keys);
+    void restoreFileOperations(const RestoreInformation & restore_information);
+
+    /// Remove 'path' prefix from 'key' to get relative key.
+    /// It's needed to store keys to metadata files in RELATIVE_PATHS version.
+    static String shrinkKey(const String & path, const String & key);
+    std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const String & key);
+
+    /// Forms detached path '../../detached/part_name/' from '../../part_name/'
+    static String pathToDetached(const String & source_path);
+
+    std::atomic<UInt64> revision_counter = 0;
+    inline static const String RESTORE_FILE_NAME = "restore";
+
+    /// Key has format: ../../r{revision}-{operation}
+    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+)$"};
+
+    /// Object contains information about schema version.
+    inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
+    /// Version with possibility to backup-restore metadata.
+    static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
+    /// Directories with data.
+    const std::vector<String> data_roots {"data", "store"};
+
+    ReadSettings read_settings;
+
+    DiskObjectStorage * disk;
 };
 
 }
