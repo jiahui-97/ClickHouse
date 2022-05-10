@@ -210,18 +210,17 @@ if __name__ == "__main__":
 
     json_path = os.path.join(work_path, "params.json")
     with open(json_path, "w", encoding="utf-8") as json_params:
-        json_params.write(
-            json.dumps(
-                get_json_params_dict(
-                    check_name,
-                    pr_info,
-                    images_with_versions,
-                    run_by_hash_total,
-                    run_by_hash_num,
-                )
+        params_text = json.dumps(
+            get_json_params_dict(
+                check_name,
+                pr_info,
+                images_with_versions,
+                run_by_hash_total,
+                run_by_hash_num,
             )
         )
-    logging.info("Parameters file %s is written", json_path)
+        json_params.write(params_text)
+        logging.info("Parameters file %s is written: %s", json_path, params_text)
 
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
